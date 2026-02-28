@@ -8871,18 +8871,29 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                 <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
                   <div className="flex items-center gap-2 mb-2">
                     <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
+                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
                     <div className="font-bold text-slate-950 dark:text-white">iPhone / iPad (iOS)</div>
                   </div>
                   <div className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed space-y-2">
-                    <div className="font-semibold">One-time setup for offline:</div>
+                    <div className="font-semibold">One-time setup for offline use:</div>
                     <ol className="list-decimal ml-5 space-y-1">
-                      <li><span className="font-semibold">With Wi‑Fi ON:</span> open MONIEZI in <span className="font-semibold">Safari</span>.</li>
-                      <li>Tap <span className="font-semibold">Share</span> → <span className="font-semibold">Add to Home Screen</span>.</li>
-                      <li><span className="font-semibold">With Wi‑Fi still ON:</span> open MONIEZI from the <span className="font-semibold">Home Screen icon</span> (this second open finishes caching).</li>
-                      <li>Now you can use MONIEZI in <span className="font-semibold">Airplane Mode</span> / offline.</li>
+                      <li>
+                        While connected to the internet (<span className="font-semibold">Wi‑Fi</span> or <span className="font-semibold">cellular</span>): open MONIEZI in <span className="font-semibold">Safari</span>.
+                      </li>
+                      <li>
+                        Tap <span className="font-semibold">Share</span> → <span className="font-semibold">Add to Home Screen</span>.
+                      </li>
+                      <li>
+                        Still connected: open MONIEZI from the <span className="font-semibold">Home Screen icon</span> a second time (this finishes saving the app to your device).
+                      </li>
+                      <li>
+                        Done! MONIEZI will now work without an internet connection (<span className="font-semibold">offline</span>).
+                      </li>
                     </ol>
                     <div className="mt-3 text-xs text-slate-600 dark:text-slate-300">
-                      Note: iOS may sometimes show a system message about Airplane Mode/Wi‑Fi. Tap <span className="font-semibold">OK</span> — MONIEZI will still run offline once the setup above is completed.
+                      Note: iOS may show a system message when going offline. Tap <span className="font-semibold">OK</span> — MONIEZI will still work as long as setup above is complete.
                     </div>
                   </div>
                 </div>
@@ -8890,15 +8901,29 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                 <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
                   <div className="flex items-center gap-2 mb-2">
                     <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
+                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
                     <div className="font-bold text-slate-950 dark:text-white">Android (Chrome)</div>
                   </div>
                   <div className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed space-y-2">
-                    <div className="font-semibold">Install for offline:</div>
+                    <div className="font-semibold">One-time setup for offline use:</div>
                     <ol className="list-decimal ml-5 space-y-1">
-                      <li><span className="font-semibold">With internet ON:</span> open MONIEZI in <span className="font-semibold">Chrome</span>.</li>
-                      <li>Tap <span className="font-semibold">Install</span> (or menu → <span className="font-semibold">Add to Home screen</span>).</li>
-                      <li>Open the installed MONIEZI app once (still online) to finish caching.</li>
-                      <li>After that, it works offline / Airplane Mode.</li>
+                      <li>
+                        While connected to the internet (<span className="font-semibold">Wi‑Fi</span> or <span className="font-semibold">cellular</span>): open MONIEZI in <span className="font-semibold">Chrome</span>.
+                      </li>
+                      <li>
+                        A banner will appear at the top of the screen saying <span className="font-semibold">&quot;Install MONIEZI&quot;</span> — tap <span className="font-semibold">Install</span>.
+                        <span className="block mt-1">
+                          (If you don&apos;t see the banner, tap the browser menu → <span className="font-semibold">Add to Home Screen</span>.)
+                        </span>
+                      </li>
+                      <li>
+                        Open the installed MONIEZI app once more while still connected (this finishes saving the app to your device).
+                      </li>
+                      <li>
+                        Done! MONIEZI will now work without an internet connection (<span className="font-semibold">offline</span>).
+                      </li>
                     </ol>
                   </div>
                 </div>
