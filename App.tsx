@@ -8875,7 +8875,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                   </div>
                   <div className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed space-y-2">
                     <div className="font-semibold">One-time setup for offline use:</div>
-                    <ol className="list-decimal ml-5 space-y-2">
+                    <ol className="list-decimal ml-5 space-y-6">
                       <li>
                         While connected to the internet (<span className="font-semibold">Wi‑Fi</span> or <span className="font-semibold">cellular</span>): open MONIEZI in <span className="font-semibold">Safari</span>.
                       </li>
@@ -8902,7 +8902,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                   </div>
                   <div className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed space-y-2">
                     <div className="font-semibold">One-time setup for offline use:</div>
-                    <ol className="list-decimal ml-5 space-y-2">
+                    <ol className="list-decimal ml-5 space-y-6">
                       <li>
                         While connected to the internet (<span className="font-semibold">Wi‑Fi</span> or <span className="font-semibold">cellular</span>): open MONIEZI in <span className="font-semibold">Chrome</span>.
                       </li>
