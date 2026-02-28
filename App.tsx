@@ -8871,9 +8871,6 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                 <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
                   <div className="flex items-center gap-2 mb-2">
                     <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
-                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
                     <div className="font-bold text-slate-950 dark:text-white">iPhone / iPad (iOS)</div>
                   </div>
                   <div className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed space-y-2">
@@ -8899,9 +8896,6 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
-                    <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
                   <div className="flex items-center gap-2 mb-2">
                     <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
                     <div className="font-bold text-slate-950 dark:text-white">Android (Chrome)</div>
