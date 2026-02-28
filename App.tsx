@@ -8871,7 +8871,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                 <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
                   <div className="flex items-center gap-2 mb-2">
                     <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
-                    <div className="font-bold text-slate-950 dark:text-white">iPhone / iPad (iOS)</div>
+                    <div className="font-extrabold text-sky-600 dark:text-sky-400 text-base">iPhone / iPad (iOS)</div>
                   </div>
                   <div className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed space-y-2">
                     <div className="font-semibold">One-time setup for offline use:</div>
@@ -8898,7 +8898,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                 <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
                   <div className="flex items-center gap-2 mb-2">
                     <Smartphone className="text-slate-700 dark:text-slate-200" size={18} />
-                    <div className="font-bold text-slate-950 dark:text-white">Android (Chrome)</div>
+                    <div className="font-extrabold text-emerald-600 dark:text-emerald-400 text-base">Android (Chrome)</div>
                   </div>
                   <div className="text-slate-700 dark:text-slate-200 text-sm leading-relaxed space-y-2">
                     <div className="font-semibold">One-time setup for offline use:</div>
