@@ -8358,9 +8358,9 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                   <HelpCircle size={20} strokeWidth={1.5} />
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="font-bold text-slate-950 dark:text-white">Help</div>
-                    <div className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Offline setup</div>
+                  <div className="flex flex-col gap-0.5">
+                    <div className="text-lg font-extrabold tracking-wide text-yellow-400">OFFLINE</div>
+                    <div className="text-base font-semibold text-slate-950 dark:text-white">Offline setup</div>
                   </div>
                   <div className="text-sm text-slate-600 dark:text-slate-300 mt-1">
                     iPhone and Android instructions for offline mode, Airplane Mode, and first-time setup.
