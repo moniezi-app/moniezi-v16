@@ -556,16 +556,16 @@ const DateInput = ({ label, value, onChange }: { label: string, value: string, o
 const Drawer: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-md p-0 sm:p-4 transition-all">
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/40 dark:bg-slate-950/60 backdrop-blur-md p-0 sm:p-4 transition-all modal-overlay">
       <div className="fixed inset-0" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-xl sm:rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-300">
+      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-xl sm:rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-300" style={{ maxWidth: '100%' }}>
         <div className="flex items-center justify-between p-8 pb-4">
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="p-2 bg-slate-100 dark:bg-slate-950 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full text-slate-600 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white transition-colors">
             <X size={28} strokeWidth={1.5} />
           </button>
         </div>
-        <div className="px-8 pb-8 overflow-y-auto custom-scrollbar">
+        <div className="px-8 pb-8 modal-scroll-area custom-scrollbar">
           {children}
         </div>
       </div>
@@ -758,6 +758,7 @@ function pageToHashPath(page: Page): string {
 }
 
 const CUSTOMER_VERSION = "1.0.0";
+const LICENSE_STORAGE_KEY = "moniezi_license_v1";
 
 export default function App() {
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -894,33 +895,71 @@ export default function App() {
   }, [currentPage]);
 
   // Scroll-to-top button visibility - show after 65% scroll of page
+  // NOTE: The app scrolls inside mainScrollRef (not the window), so we listen there.
   useEffect(() => {
-    const handleScroll = () => {
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const scrollHeight = document.documentElement.scrollHeight;
-      const clientHeight = document.documentElement.clientHeight;
-      const scrollableHeight = scrollHeight - clientHeight;
-      
-      // Calculate scroll percentage (0 to 1)
-      const scrollPercent = scrollableHeight > 0 ? scrollTop / scrollableHeight : 0;
-      
-      // Show button after scrolling 65% of the page
-      setShowScrollToTop(scrollPercent > 0.65);
+    // On most screens we scroll inside the internal <div ref={mainScrollRef}> container,
+    // but on iOS (Safari / PWA) layout/viewport quirks can occasionally cause the window
+    // to become the scroll container. We support BOTH so the Scroll-To-Top button
+    // reliably appears everywhere.
+    const el = mainScrollRef.current;
+
+    const getScrollMetrics = () => {
+      // Prefer the internal container if it exists and is actually scrollable.
+      if (el) {
+        const scrollTop = el.scrollTop || 0;
+        const scrollHeight = el.scrollHeight || 0;
+        const clientHeight = el.clientHeight || 0;
+        const scrollableHeight = Math.max(0, scrollHeight - clientHeight);
+        return { scrollTop, scrollableHeight };
+      }
+
+      // Fallback to window/document scroll.
+      const doc = document.documentElement;
+      const scrollTop = window.scrollY || doc.scrollTop || 0;
+      const scrollHeight = doc.scrollHeight || 0;
+      const clientHeight = window.innerHeight || doc.clientHeight || 0;
+      const scrollableHeight = Math.max(0, scrollHeight - clientHeight);
+      return { scrollTop, scrollableHeight };
     };
-    
-    // Add scroll listener to window
+
+    const handleScroll = () => {
+      const { scrollTop, scrollableHeight } = getScrollMetrics();
+
+      // Percent-based thresholds can fail on iOS when scrollHeight/clientHeight is reported oddly.
+      // Combine a pixel threshold with a percent threshold for robustness.
+      const percent = scrollableHeight > 0 ? scrollTop / scrollableHeight : 0;
+
+      const show =
+        scrollTop > 450 || // ~ a couple screens down
+        percent > 0.55;    // or past the midway point on long pages
+
+      setShowScrollToTop(show);
+    };
+
+    // Listen to BOTH scroll containers.
+    // Internal container:
+    if (el) el.addEventListener('scroll', handleScroll, { passive: true });
+    // Window fallback:
     window.addEventListener('scroll', handleScroll, { passive: true });
-    
+    window.addEventListener('resize', handleScroll);
+
     // Initialize state
     handleScroll();
-    
+
     // Cleanup
     return () => {
+      if (el) el.removeEventListener('scroll', handleScroll);
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
     };
   }, [currentPage]); // Re-check when page changes as content length varies
 
   const scrollToTop = () => {
+    const el = mainScrollRef.current;
+    if (el) {
+      el.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    // Also reset window scroll as fallback
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   
@@ -931,6 +970,7 @@ export default function App() {
   const [licenseError, setLicenseError] = useState('');
   const [isValidatingLicense, setIsValidatingLicense] = useState(false);
   const [licenseInfo, setLicenseInfo] = useState<{ email?: string; purchaseDate?: string; } | null>(null);
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -1029,7 +1069,7 @@ export default function App() {
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit_tx' | 'edit_inv' | 'tax_payments' | 'create_cat'>('add');
   const [activeTab, setActiveTab] = useState<'income' | 'expense' | 'billing'>('income');
   const [billingDocType, setBillingDocType] = useState<'invoice' | 'estimate'>('invoice');
-  const [activeItem, setActiveItem] = useState<Partial<Transaction> & Partial<Invoice> & Partial<Estimate>>({});
+  const [activeItem, setActiveItem] = useState<Record<string, any>>({});
   const [activeTaxPayment, setActiveTaxPayment] = useState<Partial<TaxPayment>>({ type: 'Estimated', date: new Date().toISOString().split('T')[0] });
   
   const [categorySearch, setCategorySearch] = useState('');
@@ -1134,6 +1174,7 @@ export default function App() {
   const [pendingBackupData, setPendingBackupData] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const appStateSaveTimerRef = useRef<number | null>(null);
+  const recurringInvoicesProcessedRef = useRef(false);
 
   // Scan Receipt State
   const [scanPreview, setScanPreview] = useState<string | null>(null);
@@ -1410,15 +1451,7 @@ export default function App() {
       setIsLicenseValid(true);
       return;
     }
-    if (!LICENSING_ENABLED) {
-      setIsLicenseValid(true);
-      return;
-    }
     const checkStoredLicense = async () => {
-      if (!LICENSING_ENABLED) {
-        setIsLicenseValid(true);
-        return;
-      }
       const stored = localStorage.getItem(LICENSE_STORAGE_KEY);
       if (stored) {
         try {
@@ -1451,7 +1484,6 @@ export default function App() {
 
   // Validate license with server (with offline grace window)
   const validateLicenseWithServer = async (key: string): Promise<boolean> => {
-    if (!LICENSING_ENABLED) return true;
     if (!LICENSING_ENABLED) return true;
     const storedRaw = localStorage.getItem(LICENSE_STORAGE_KEY);
     const stored = storedRaw ? (() => { try { return JSON.parse(storedRaw); } catch { return null; } })() : null;
@@ -1631,6 +1663,65 @@ export default function App() {
 
   const removeToast = (id: string) => setNotifications(prev => prev.filter(n => n.id !== id));
 
+  // --- iOS body scroll lock: prevents background scroll & horizontal drift when modals are open ---
+  const scrollLockCountRef = useRef(0);
+
+  const lockBodyScroll = useCallback(() => {
+    scrollLockCountRef.current += 1;
+    if (scrollLockCountRef.current === 1) {
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+      document.body.style.setProperty('--scroll-top', `-${scrollY}px`);
+      document.body.classList.add('modal-open');
+    }
+  }, []);
+
+  const unlockBodyScroll = useCallback(() => {
+    scrollLockCountRef.current = Math.max(0, scrollLockCountRef.current - 1);
+    if (scrollLockCountRef.current === 0) {
+      const scrollY = Math.abs(parseInt(document.body.style.getPropertyValue('--scroll-top') || '0', 10));
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('--scroll-top');
+      window.scrollTo(0, scrollY);
+    }
+  }, []);
+
+
+  // Lock body scroll when Drawer / Receipt View / PDF preview modals are open
+  useEffect(() => {
+    if (isDrawerOpen) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [isDrawerOpen, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (viewingReceipt) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [viewingReceipt, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (isPdfPreviewOpen) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [isPdfPreviewOpen, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (isEstimatePdfPreviewOpen) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [isEstimatePdfPreviewOpen, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (showPLPreview || showProPLPreview) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [showPLPreview, showProPLPreview, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (showHelpModal) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [showHelpModal, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (scanPreview) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [scanPreview, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (isClientModalOpen) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [isClientModalOpen, lockBodyScroll, unlockBodyScroll]);
+
+  useEffect(() => {
+    if (showInsights) { lockBodyScroll(); return () => { unlockBodyScroll(); }; }
+  }, [showInsights, lockBodyScroll, unlockBodyScroll]);
 
   const findMatchingClientId = useCallback((data: Partial<Invoice> & Partial<Estimate>) => {
     const email = normalize((data as any).clientEmail || '');
@@ -1640,13 +1731,13 @@ export default function App() {
     if (data.clientId && clients.some(c => c.id === data.clientId)) return data.clientId;
 
     if (email) {
-      const byEmail = clients.find(c => normalize(c.email || '') == email);
+      const byEmail = clients.find(c => normalize(c.email || '') === email);
       if (byEmail) return byEmail.id;
     }
     if (name) {
       const byName = clients.find(c => normalize(c.name) === name && normalize(c.company || '') === company);
       if (byName) return byName.id;
-      const byNameOnly = clients.find(c => normalize(c.name) == name);
+      const byNameOnly = clients.find(c => normalize(c.name) === name);
       if (byNameOnly) return byNameOnly.id;
     }
     return undefined;
@@ -1893,7 +1984,7 @@ export default function App() {
           await saveAppState(payload);
         } catch (e) {
           console.error("Save failed (IndexedDB?)", e);
-          showToast("Warning: Could not save data (storage). Export a backup now.", "warning");
+          showToast("Warning: Could not save data (storage). Export a backup now.", "error");
         }
       })();
     }, 350);
@@ -1907,10 +1998,12 @@ export default function App() {
 
   useEffect(() => {
     if (!dataLoaded) return;
+    if (recurringInvoicesProcessedRef.current) return; // Only process once per session
     const todayStr = new Date().toISOString().split('T')[0];
     const activeRecurring = invoices.filter(inv => inv.recurrence && inv.recurrence.active && inv.recurrence.nextDate <= todayStr && inv.status !== 'void');
     
     if (activeRecurring.length > 0) {
+      recurringInvoicesProcessedRef.current = true;
       const generatedInvoices: Invoice[] = [];
       const updatedParentInvoices = [...invoices];
       activeRecurring.forEach(parent => {
@@ -2715,8 +2808,8 @@ export default function App() {
   const getHeaderFabType = (): 'income' | 'expense' | 'billing' => {
     if (currentPage === Page.Income) return 'income';
     if (currentPage === Page.Expenses) return 'expense';
-    if ((currentPage === Page.Invoices || currentPage === Page.Invoice) || currentPage === Page.Invoice) return 'billing';
-    if ((currentPage === Page.AllTransactions || currentPage === Page.Ledger) || currentPage === Page.Ledger) {
+    if (currentPage === Page.Invoices) return 'billing';
+    if (currentPage === Page.AllTransactions || currentPage === Page.Ledger) {
       if (ledgerFilter === 'income') return 'income';
       if (ledgerFilter === 'invoice') return 'billing';
       if (ledgerFilter === 'expense') return 'expense';
@@ -3300,7 +3393,7 @@ const demoMileageTrips: MileageTrip[] = [
       const t = calcDocTotals(e.items as any, e.discount || 0, e.taxRate || 0, e.shipping || 0);
       return { ...e, subtotal: t.subtotal, amount: t.total } as Estimate;
     }));
-    setSettings({ ...demo.settings, requireReceiptOverThreshold: true, receiptThreshold: 100, mileageRate: 0.725 });
+    setSettings({ ...demo.settings, requireReceiptOverThreshold: true, receiptThreshold: 100, mileageRateCents: 72.5 });
     setTaxPayments([...(demo.taxPayments || [])] as TaxPayment[]);
     setSeedSuccess(true); showToast("Demo data loaded successfully!", "success"); setCurrentPage(Page.Dashboard); setTimeout(() => setSeedSuccess(false), 2000);
   };
@@ -3407,7 +3500,7 @@ const demoMileageTrips: MileageTrip[] = [
       ...original,
       id: undefined, // Will be generated on save
       date: new Date().toISOString().split('T')[0], // Set to today
-      receiptImage: undefined, // Don't copy receipt
+      receiptId: undefined, // Don't copy receipt
       notes: original.notes || '' // Keep notes but don't add "duplicated" marker
     };
     
@@ -3814,7 +3907,7 @@ const demoMileageTrips: MileageTrip[] = [
           ...original,
           id: generateId('tx'),
           date,
-          receiptImage: undefined
+          receiptId: undefined
         };
         setTransactions(prev => [newTx, ...prev]);
         
@@ -4095,11 +4188,11 @@ const demoMileageTrips: MileageTrip[] = [
       }));
 
       const periodLabel =
-        filterPeriod === 'month'
+        plPeriodType === 'month'
           ? referenceDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-          : filterPeriod === 'quarter'
+          : plPeriodType === 'quarter'
             ? `Q${Math.floor(referenceDate.getMonth() / 3) + 1}_${referenceDate.getFullYear()}`
-            : filterPeriod === 'year'
+            : plPeriodType === 'year'
               ? referenceDate.getFullYear().toString()
               : 'All_Time';
 
@@ -4567,11 +4660,11 @@ const demoMileageTrips: MileageTrip[] = [
         }));
 
         const periodLabel =
-          filterPeriod === 'month'
+          plPeriodType === 'month'
             ? referenceDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-            : filterPeriod === 'quarter'
+            : plPeriodType === 'quarter'
               ? `Q${Math.floor(referenceDate.getMonth() / 3) + 1}_${referenceDate.getFullYear()}`
-              : filterPeriod === 'year'
+              : plPeriodType === 'year'
                 ? referenceDate.getFullYear().toString()
                 : 'All_Time';
 
@@ -5175,7 +5268,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       {/* Scan Receipt Confirm Modal */}
       {scanPreview && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-sm p-4 animate-in fade-in duration-200 modal-overlay">
             <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-xl p-4 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2"><Receipt size={20} />Save Receipt?</h3>
@@ -5194,7 +5287,13 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       {/* View Receipt Full Screen Modal */}
       {viewingReceipt && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/95 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/95 backdrop-blur-sm px-4 pb-4 animate-in fade-in duration-200 safe-area-top safe-area-bottom modal-overlay"
+          style={{
+            paddingTop: 'max(16px, env(safe-area-inset-top, 16px))',
+            paddingBottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
+          }}
+        >
             <div className="w-full max-w-lg h-full flex flex-col">
                 <div className="flex items-center justify-between mb-4 text-white">
                     <div className="flex items-center gap-3">
@@ -5220,7 +5319,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
       )}
 
       {isPdfPreviewOpen && selectedInvoiceForDoc && (
-        <div className="fixed inset-0 z-[99999] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[99999] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200 modal-overlay">
             <div className="relative w-full max-w-[800px] bg-white text-slate-900 shadow-2xl overflow-y-auto max-h-[90vh] rounded-lg">
                 {/* Preview Header with Actions */}
                 <div className="sticky top-0 left-0 right-0 bg-white border-b border-gray-200 px-3 sm:px-4 pb-3 sm:pb-4 pt-[calc(0.75rem+env(safe-area-inset-top))] flex justify-between items-center z-50">
@@ -5365,7 +5464,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
       )}
 
       {isEstimatePdfPreviewOpen && selectedEstimateForDoc && (
-        <div className="fixed inset-0 z-[99999] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[99999] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200 modal-overlay">
             <div className="relative w-full max-w-[800px] bg-white text-slate-900 shadow-2xl overflow-y-auto max-h-[90vh] rounded-lg">
                 {/* Preview Header with Actions */}
                 <div className="sticky top-0 left-0 right-0 bg-white border-b border-gray-200 px-3 sm:px-4 pb-3 sm:pb-4 pt-[calc(0.75rem+env(safe-area-inset-top))] flex justify-between items-center z-50">
@@ -5590,7 +5689,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
 
       {showResetConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 modal-overlay">
             <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-xl p-6 shadow-2xl border border-red-500/20">
                 <div className="flex items-center gap-4 mb-4 text-red-600 dark:text-red-500">
                    <div className="bg-red-100 dark:bg-red-500/10 p-3 rounded-full"><AlertTriangle size={24} strokeWidth={2} /></div>
@@ -5607,7 +5706,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       {/* NEW: Delete Invoice Confirmation Modal */}
       {invoiceToDelete && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 modal-overlay">
             <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-xl p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-3 mb-4 text-slate-900 dark:text-white">
                     <div className="bg-red-100 dark:bg-red-500/10 p-3 rounded-full text-red-600 dark:text-red-500">
@@ -5626,7 +5725,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       {/* NEW: Restore Backup Confirmation Modal */}
       {showRestoreModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 modal-overlay">
             <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-xl p-6 shadow-2xl border border-blue-500/20">
                 <div className="flex items-center gap-4 mb-4 text-blue-600 dark:text-blue-400">
                     <div className="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-full"><RotateCcw size={24} strokeWidth={2} /></div>
@@ -6035,7 +6134,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
              <PeriodSelector period={filterPeriod} setPeriod={setFilterPeriod} refDate={referenceDate} setRefDate={setReferenceDate} />
 
-        {((currentPage === Page.AllTransactions || currentPage === Page.Ledger) || currentPage === Page.Ledger) && (
+        {(currentPage === Page.AllTransactions || currentPage === Page.Ledger) && (
                <div className="flex bg-slate-200 dark:bg-slate-900 p-1 rounded-lg mb-4">
                   {(['all', 'income', 'expense', 'invoice'] as const).map(f => (
                     <button key={f} onClick={() => setLedgerFilter(f)} className={`flex-1 py-2 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${ledgerFilter === f ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-200'}`}>{f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}</button>
@@ -6173,7 +6272,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
            </div>
         )}
 
-        {((currentPage === Page.Invoices || currentPage === Page.Invoice) || currentPage === Page.Invoice) && (
+        {(currentPage === Page.Invoices) && (
           <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -7461,7 +7560,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
               {/* P&L Preview Modal */}
               {showPLPreview && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-stretch justify-stretch p-0">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-stretch justify-stretch p-0 modal-overlay">
                   <div className="bg-white dark:bg-slate-900 rounded-none w-full h-full overflow-hidden flex flex-col">
                     {/* Modal Header */}
                     <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
@@ -7523,9 +7622,9 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                               <div className="mt-4 text-left">
                                 <h2 className="text-xl font-bold text-gray-900 uppercase">Profit &amp; Loss Statement</h2>
                                 <p className="text-sm text-gray-700 mt-1">
-                                  Period: {filterPeriod === 'month' ? referenceDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) :
-                                      filterPeriod === 'quarter' ? `Q${Math.floor(referenceDate.getMonth() / 3) + 1} ${referenceDate.getFullYear()}` :
-                                      filterPeriod === 'year' ? referenceDate.getFullYear().toString() : 'All Time'}
+                                  Period: {plPeriodType === 'month' ? referenceDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) :
+                                      plPeriodType === 'quarter' ? `Q${Math.floor(referenceDate.getMonth() / 3) + 1} ${referenceDate.getFullYear()}` :
+                                      plPeriodType === 'year' ? referenceDate.getFullYear().toString() : 'All Time'}
                                 </p>
                                 <p className="text-xs text-gray-600 mt-1">
                                   Generated: {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
@@ -7628,9 +7727,9 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                             This statement has been prepared from the books of {settings.businessName}.
                           </p>
                           <p className="text-xs text-gray-600 mt-1">
-                            For period ending {filterPeriod === 'month' ? referenceDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) :
-                                              filterPeriod === 'quarter' ? `Q${Math.floor(referenceDate.getMonth() / 3) + 1} ${referenceDate.getFullYear()}` :
-                                              filterPeriod === 'year' ? referenceDate.getFullYear().toString() : 'All Time'}
+                            For period ending {plPeriodType === 'month' ? referenceDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) :
+                                              plPeriodType === 'quarter' ? `Q${Math.floor(referenceDate.getMonth() / 3) + 1} ${referenceDate.getFullYear()}` :
+                                              plPeriodType === 'year' ? referenceDate.getFullYear().toString() : 'All Time'}
                           </p>
                         </div>
                       </div>
@@ -7651,11 +7750,11 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                             const element = document.getElementById('pl-pdf-preview-content');
                             if (!element) throw new Error('Preview content not found');
                             
-                            const periodLabel = filterPeriod === 'month' 
+                            const periodLabel = plPeriodType === 'month' 
                               ? referenceDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-                              : filterPeriod === 'quarter' 
+                              : plPeriodType === 'quarter' 
                                 ? `Q${Math.floor(referenceDate.getMonth() / 3) + 1} ${referenceDate.getFullYear()}`
-                                : filterPeriod === 'year'
+                                : plPeriodType === 'year'
                                   ? referenceDate.getFullYear().toString()
                                   : 'All-Time';
                             
@@ -7791,7 +7890,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
         {/* Pro P&L Preview Modal - OUTSIDE Reports conditional for proper rendering */}
         {showProPLPreview && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-stretch justify-stretch p-0">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-stretch justify-stretch p-0 modal-overlay">
             <div className="bg-gray-100 w-full h-full overflow-hidden flex flex-col">
               {/* Modal Header */}
               <div className="flex items-center justify-between px-3 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] sm:p-4 border-b border-gray-300 bg-white flex-shrink-0">
@@ -8593,7 +8692,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
                     <div className="flex flex-col gap-3 text-sm">
                        <div className="flex justify-between items-center"><span className="text-emerald-700 dark:text-emerald-300">Federal Income Tax (Effective)</span><span className="font-bold text-emerald-900 dark:text-emerald-100 text-lg">{settings.taxRate}%</span></div>
                        <div className="flex justify-between items-center"><span className="text-emerald-700 dark:text-emerald-300">State Tax (Optional)</span><span className="font-bold text-emerald-900 dark:text-emerald-100 text-lg">{settings.stateTaxRate}%</span></div>
-                       <div className="flex justify-between items-center"><span className="text-emerald-700 dark:text-emerald-300 flex items-center gap-1">Self-Employment Tax <HelpCircle size={14} className="cursor-help" title="Social Security (12.4%) + Medicare (2.9%)" /></span><span className="font-bold text-emerald-900 dark:text-emerald-100 text-lg">~15.3%</span></div>
+                       <div className="flex justify-between items-center"><span className="text-emerald-700 dark:text-emerald-300 flex items-center gap-1">Self-Employment Tax <span title="Social Security (12.4%) + Medicare (2.9%)"><HelpCircle size={14} className="cursor-help inline-block" /></span></span><span className="font-bold text-emerald-900 dark:text-emerald-100 text-lg">~15.3%</span></div>
                        <div className="h-px bg-emerald-200 dark:bg-emerald-800 my-1" />
                       <div className="flex justify-between items-center bg-emerald-100 dark:bg-emerald-900/20 -mx-2 px-2 py-2 rounded">
                         <span className="font-bold uppercase text-xs tracking-wider text-emerald-900 dark:text-emerald-100">Combined Planning Rate</span>
@@ -8832,7 +8931,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
       {showScrollToTop && (
         <button
           onClick={scrollToTop}
-          className="no-print fixed right-4 z-[54] w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 active:scale-90 animate-in fade-in zoom-in-75 duration-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-900/10 dark:shadow-black/30 hover:shadow-xl hover:scale-105"
+          className="no-print fixed right-4 z-[80] w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 active:scale-90 animate-in fade-in zoom-in-75 duration-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-900/10 dark:shadow-black/30 hover:shadow-xl hover:scale-105"
           style={{
             bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px) + 20px)',
           }}
@@ -8845,7 +8944,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       {/* Help Modal */}
       {showHelpModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-stretch justify-stretch p-0">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-stretch justify-stretch p-0 modal-overlay">
           <div className="bg-white dark:bg-slate-900 rounded-none w-full h-full overflow-hidden flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
@@ -8949,25 +9048,25 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
             {/* Invoice */}
             <button 
               onClick={() => { setBillingDocType('invoice'); setCurrentPage(Page.Invoices); }} 
-              className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'invoice' ? 'text-blue-600 dark:text-white' : ''}`}
-              style={{ color: (currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'invoice' ? undefined : 'var(--nav-inactive)' }}
+              className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${currentPage === Page.Invoices && billingDocType === 'invoice' ? 'text-blue-600 dark:text-white' : ''}`}
+              style={{ color: currentPage === Page.Invoices && billingDocType === 'invoice' ? undefined : 'var(--nav-inactive)' }}
             >
-              <div className={`p-1.5 rounded-lg ${(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'invoice' ? 'bg-blue-100 dark:bg-slate-800' : ''}`}>
-                <FileText size={20} strokeWidth={(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'invoice' ? 2 : 1.5} />
+              <div className={`p-1.5 rounded-lg ${currentPage === Page.Invoices && billingDocType === 'invoice' ? 'bg-blue-100 dark:bg-slate-800' : ''}`}>
+                <FileText size={20} strokeWidth={currentPage === Page.Invoices && billingDocType === 'invoice' ? 2 : 1.5} />
               </div>
-              <span className={`text-[11px] mt-0.5 ${(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'invoice' ? 'font-bold text-blue-600 dark:text-white' : 'font-semibold'}`} style={{ color: (currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'invoice' ? undefined : 'var(--nav-inactive)' }}>Invoice</span>
+              <span className={`text-[11px] mt-0.5 ${currentPage === Page.Invoices && billingDocType === 'invoice' ? 'font-bold text-blue-600 dark:text-white' : 'font-semibold'}`} style={{ color: currentPage === Page.Invoices && billingDocType === 'invoice' ? undefined : 'var(--nav-inactive)' }}>Invoice</span>
             </button>
 
             {/* Estimate */}
             <button 
               onClick={() => { setBillingDocType('estimate'); setCurrentPage(Page.Invoices); }} 
-              className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'estimate' ? 'text-blue-600 dark:text-white' : ''}`}
-              style={{ color: (currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'estimate' ? undefined : 'var(--nav-inactive)' }}
+              className={`flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 ${currentPage === Page.Invoices && billingDocType === 'estimate' ? 'text-blue-600 dark:text-white' : ''}`}
+              style={{ color: currentPage === Page.Invoices && billingDocType === 'estimate' ? undefined : 'var(--nav-inactive)' }}
             >
-              <div className={`p-1.5 rounded-lg ${(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'estimate' ? 'bg-blue-100 dark:bg-slate-800' : ''}`}>
-                <ClipboardList size={20} strokeWidth={(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'estimate' ? 2 : 1.5} />
+              <div className={`p-1.5 rounded-lg ${currentPage === Page.Invoices && billingDocType === 'estimate' ? 'bg-blue-100 dark:bg-slate-800' : ''}`}>
+                <ClipboardList size={20} strokeWidth={currentPage === Page.Invoices && billingDocType === 'estimate' ? 2 : 1.5} />
               </div>
-              <span className={`text-[11px] mt-0.5 ${(currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'estimate' ? 'font-bold text-blue-600 dark:text-white' : 'font-semibold'}`} style={{ color: (currentPage === Page.Invoices || currentPage === Page.Invoice) && billingDocType === 'estimate' ? undefined : 'var(--nav-inactive)' }}>Estimate</span>
+              <span className={`text-[11px] mt-0.5 ${currentPage === Page.Invoices && billingDocType === 'estimate' ? 'font-bold text-blue-600 dark:text-white' : 'font-semibold'}`} style={{ color: currentPage === Page.Invoices && billingDocType === 'estimate' ? undefined : 'var(--nav-inactive)' }}>Estimate</span>
             </button>
 
             {/* Center FAB - Ledger with + */}
@@ -9029,7 +9128,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       {/* Insights Modal */}
       {showInsights && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 animate-in fade-in duration-200 modal-overlay">
           <div className="bg-white dark:bg-slate-900 w-full max-w-5xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
             <InsightsDashboard
               transactions={transactions}
@@ -9369,7 +9468,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       {/* Client Modal */}
       {isClientModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 modal-overlay">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -9489,7 +9588,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
 {/* Template Suggestion Modal */}
       {showTemplateSuggestion && templateSuggestionData && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 modal-overlay">
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-xl p-6 shadow-2xl border border-blue-500/20">
             <div className="flex items-center gap-4 mb-4 text-blue-600 dark:text-blue-400">
               <div className="bg-blue-100 dark:bg-blue-500/10 p-3 rounded-full">
@@ -9535,7 +9634,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
       
       {/* Phase 3: Batch Duplicate Modal */}
       {showBatchDuplicateModal && batchDuplicateData && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 overflow-y-auto">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 overflow-y-auto modal-overlay">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl p-6 shadow-2xl border border-purple-500/20 my-auto">
             <div className="flex items-center gap-4 mb-4 text-purple-600 dark:text-purple-400">
               <div className="bg-purple-100 dark:bg-purple-500/10 p-3 rounded-full">
@@ -9545,7 +9644,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
             </div>
             
             <p className="text-slate-600 dark:text-slate-300 mb-4 font-medium">
-              Creating multiple copies of: <span className="font-bold text-slate-900 dark:text-white">{batchDuplicateData.name || (batchDuplicateData as Invoice).client}</span>
+              Creating multiple copies of: <span className="font-bold text-slate-900 dark:text-white">{('name' in batchDuplicateData ? batchDuplicateData.name : null) || (batchDuplicateData as Invoice).client}</span>
             </p>
             
             <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 mb-6 space-y-4">
@@ -9610,7 +9709,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
       
       {/* Phase 3: Recurring Transaction Modal */}
       {showRecurringModal && recurringData && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 overflow-y-auto">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200 overflow-y-auto modal-overlay">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl p-6 shadow-2xl border border-emerald-500/20 my-auto">
             <div className="flex items-center gap-4 mb-4 text-emerald-600 dark:text-emerald-400">
               <div className="bg-emerald-100 dark:bg-emerald-500/10 p-3 rounded-full">
@@ -9620,7 +9719,7 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
             </div>
             
             <p className="text-slate-600 dark:text-slate-300 mb-4 font-medium">
-              Schedule: <span className="font-bold text-slate-900 dark:text-white">{recurringData.name}</span>
+              Schedule: <span className="font-bold text-slate-900 dark:text-white">{'name' in recurringData ? recurringData.name : (recurringData as Invoice).client}</span>
             </p>
             
             <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 mb-6 space-y-4">
