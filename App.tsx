@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import html2pdf from 'html2pdf.js';
 import { 
   TrendingUp, 
@@ -894,73 +895,110 @@ export default function App() {
     setTimeout(toTop, 0);
   }, [currentPage]);
 
-  // Scroll-to-top button visibility - show after 65% scroll of page
-  // NOTE: The app scrolls inside mainScrollRef (not the window), so we listen there.
+  // Scroll-to-top button visibility.
+  // Mobile browsers can switch between an internal scroller and window/document scrolling.
+  // We therefore measure BOTH and use the larger real scroll position.
   useEffect(() => {
-    // On most screens we scroll inside the internal <div ref={mainScrollRef}> container,
-    // but on iOS (Safari / PWA) layout/viewport quirks can occasionally cause the window
-    // to become the scroll container. We support BOTH so the Scroll-To-Top button
-    // reliably appears everywhere.
     const el = mainScrollRef.current;
 
-    const getScrollMetrics = () => {
-      // Prefer the internal container if it exists and is actually scrollable.
-      if (el) {
-        const scrollTop = el.scrollTop || 0;
-        const scrollHeight = el.scrollHeight || 0;
-        const clientHeight = el.clientHeight || 0;
-        const scrollableHeight = Math.max(0, scrollHeight - clientHeight);
-        return { scrollTop, scrollableHeight };
-      }
+    const getElementMetrics = () => {
+      if (!el) return { scrollTop: 0, scrollableHeight: 0 };
+      const scrollTop = el.scrollTop || 0;
+      const scrollHeight = el.scrollHeight || 0;
+      const clientHeight = el.clientHeight || 0;
+      return {
+        scrollTop,
+        scrollableHeight: Math.max(0, scrollHeight - clientHeight),
+      };
+    };
 
-      // Fallback to window/document scroll.
+    const getWindowMetrics = () => {
       const doc = document.documentElement;
-      const scrollTop = window.scrollY || doc.scrollTop || 0;
-      const scrollHeight = doc.scrollHeight || 0;
+      const body = document.body;
+      const scrollTop = window.scrollY || doc.scrollTop || body.scrollTop || 0;
+      const scrollHeight = Math.max(
+        doc.scrollHeight || 0,
+        body.scrollHeight || 0,
+        doc.offsetHeight || 0,
+        body.offsetHeight || 0,
+      );
       const clientHeight = window.innerHeight || doc.clientHeight || 0;
-      const scrollableHeight = Math.max(0, scrollHeight - clientHeight);
-      return { scrollTop, scrollableHeight };
+      return {
+        scrollTop,
+        scrollableHeight: Math.max(0, scrollHeight - clientHeight),
+      };
+    };
+
+    const getEffectiveMetrics = () => {
+      const elementMetrics = getElementMetrics();
+      const windowMetrics = getWindowMetrics();
+
+      const elementPercent = elementMetrics.scrollableHeight > 0
+        ? elementMetrics.scrollTop / elementMetrics.scrollableHeight
+        : 0;
+      const windowPercent = windowMetrics.scrollableHeight > 0
+        ? windowMetrics.scrollTop / windowMetrics.scrollableHeight
+        : 0;
+
+      const scrollTop = Math.max(elementMetrics.scrollTop, windowMetrics.scrollTop);
+      const scrollableHeight = Math.max(elementMetrics.scrollableHeight, windowMetrics.scrollableHeight);
+      const percent = Math.max(elementPercent, windowPercent);
+
+      return { scrollTop, scrollableHeight, percent };
     };
 
     const handleScroll = () => {
-      const { scrollTop, scrollableHeight } = getScrollMetrics();
-
-      // Percent-based thresholds can fail on iOS when scrollHeight/clientHeight is reported oddly.
-      // Combine a pixel threshold with a percent threshold for robustness.
-      const percent = scrollableHeight > 0 ? scrollTop / scrollableHeight : 0;
-
-      const show =
-        scrollTop > 450 || // ~ a couple screens down
-        percent > 0.55;    // or past the midway point on long pages
-
+      const { scrollTop, percent } = getEffectiveMetrics();
+      const show = scrollTop > 120 || percent > 0.18;
       setShowScrollToTop(show);
     };
 
-    // Listen to BOTH scroll containers.
-    // Internal container:
     if (el) el.addEventListener('scroll', handleScroll, { passive: true });
-    // Window fallback:
     window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('resize', handleScroll);
+    window.addEventListener('orientationchange', handleScroll);
+    window.addEventListener('touchmove', handleScroll, { passive: true });
 
-    // Initialize state
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleScroll);
+      window.visualViewport.addEventListener('scroll', handleScroll);
+    }
+
     handleScroll();
 
-    // Cleanup
     return () => {
       if (el) el.removeEventListener('scroll', handleScroll);
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', handleScroll);
+      window.removeEventListener('orientationchange', handleScroll);
+      window.removeEventListener('touchmove', handleScroll);
+
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleScroll);
+        window.visualViewport.removeEventListener('scroll', handleScroll);
+      }
     };
-  }, [currentPage]); // Re-check when page changes as content length varies
+  }, [currentPage]);
 
   const scrollToTop = () => {
     const el = mainScrollRef.current;
+
     if (el) {
-      el.scrollTo({ top: 0, behavior: 'smooth' });
+      try {
+        el.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      } catch {
+        el.scrollTop = 0;
+      }
     }
-    // Also reset window scroll as fallback
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    } catch {
+      window.scrollTo(0, 0);
+    }
+
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
   };
   
   // License / Activation State
@@ -8927,18 +8965,19 @@ html:not(.dark) .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-col
 
       </div>
 
-      {/* Scroll to Top Button - Theme Aware */}
-      {showScrollToTop && (
+      {/* Scroll to Top Button - rendered in a portal so mobile overflow/stacking contexts cannot hide it */}
+      {typeof document !== 'undefined' && createPortal(
         <button
           onClick={scrollToTop}
-          className="no-print fixed right-4 z-[80] w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 active:scale-90 animate-in fade-in zoom-in-75 duration-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg shadow-slate-900/10 dark:shadow-black/30 hover:shadow-xl hover:scale-105"
+          className={`no-print fixed right-4 z-[9999] h-12 w-12 rounded-full flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-900/15 dark:shadow-black/40 transition-all duration-200 active:scale-90 ${showScrollToTop ? 'opacity-100 pointer-events-auto translate-y-0' : 'opacity-0 pointer-events-none translate-y-3'}`}
           style={{
-            bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px) + 20px)',
+            bottom: '96px',
           }}
           aria-label="Scroll to top"
         >
-          <ArrowUp size={22} strokeWidth={2.5} className="text-slate-600 dark:text-slate-300" />
-        </button>
+          <ArrowUp size={22} strokeWidth={2.5} className="text-slate-700 dark:text-slate-200" />
+        </button>,
+        document.body
       )}
 
 
